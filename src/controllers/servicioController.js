@@ -1,5 +1,6 @@
 import Servicio from "../models/Servicio.js";
 import Usuario from "../models/Usuario.js";
+import Empresa from "../models/Empresa.js";
 
 // ✅ Crear un nuevo servicio (solo empresa/admin)
 export const crearServicio = async (req, res) => {
