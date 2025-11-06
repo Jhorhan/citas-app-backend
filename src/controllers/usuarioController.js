@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-// 🔑 Función para generar token
+// 🔑 Función para generar token JWT
 const generarToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
     expiresIn: "30d",
@@ -14,25 +14,14 @@ const generarToken = (id) => {
 // 🧍 Registrar nuevo usuario
 export const registrarUsuario = async (req, res) => {
   try {
-    const { nombre, email, password, rol } = req.body;
+    const { nombre, email, password } = req.body;
 
-    // Verificar si ya existe el usuario
     const existeUsuario = await Usuario.findOne({ email });
     if (existeUsuario) {
       return res.status(400).json({ msg: "El correo ya está registrado" });
     }
 
-    // Validar rol
-    const rolFinal =
-      rol && rol.toLowerCase() === "admin" ? "admin" : "cliente";
-
-    // Crear nuevo usuario
-    const usuario = await Usuario.create({
-      nombre,
-      email,
-      password,
-      rol: rolFinal,
-    });
+    const usuario = await Usuario.create({ nombre, email, password });
 
     res.status(201).json({
       msg: "Usuario registrado correctamente",
@@ -55,13 +44,11 @@ export const loginUsuario = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Buscar usuario
     const usuario = await Usuario.findOne({ email });
     if (!usuario) {
       return res.status(400).json({ msg: "Usuario no encontrado" });
     }
 
-    // Verificar contraseña
     const passwordValido = await usuario.compararPassword(password);
     if (!passwordValido) {
       return res.status(400).json({ msg: "Contraseña incorrecta" });
@@ -89,44 +76,41 @@ export const obtenerPerfil = async (req, res) => {
     const usuario = await Usuario.findById(req.usuario.id).select("-password");
     res.json(usuario);
   } catch (error) {
+    console.error(error);
     res.status(500).json({ msg: "Error al obtener el perfil" });
   }
 };
 
-// ✏️ Actualizar usuario
+// ⚙️ Actualizar datos de un usuario
 export const actualizarUsuario = async (req, res) => {
   try {
     const { id } = req.params;
+    const { nombre, email, password, rol } = req.body;
 
-    // Verificar si existe el usuario
     const usuario = await Usuario.findById(id);
     if (!usuario) {
       return res.status(404).json({ msg: "Usuario no encontrado" });
     }
 
-    // Actualizar campos permitidos
-    usuario.nombre = req.body.nombre || usuario.nombre;
-    usuario.email = req.body.email || usuario.email;
-
-    // Solo el admin puede cambiar roles
-    if (req.usuario.rol === "admin" && req.body.rol) {
-      usuario.rol = req.body.rol;
+    // Solo SuperAdmins pueden cambiar roles
+    if (rol && req.usuario.rol !== "superadmin") {
+      return res.status(403).json({ msg: "No tienes permiso para cambiar el rol de usuario" });
     }
 
-    // Si envía nueva contraseña
-    if (req.body.password) {
-      usuario.password = req.body.password;
-    }
+    usuario.nombre = nombre || usuario.nombre;
+    usuario.email = email || usuario.email;
+    if (password) usuario.password = password;
+    if (rol && req.usuario.rol === "superadmin") usuario.rol = rol;
 
-    const usuarioActualizado = await usuario.save();
+    await usuario.save();
 
     res.json({
       msg: "Usuario actualizado correctamente",
       usuario: {
-        id: usuarioActualizado._id,
-        nombre: usuarioActualizado.nombre,
-        email: usuarioActualizado.email,
-        rol: usuarioActualizado.rol,
+        id: usuario._id,
+        nombre: usuario.nombre,
+        email: usuario.email,
+        rol: usuario.rol,
       },
     });
   } catch (error) {
@@ -135,21 +119,19 @@ export const actualizarUsuario = async (req, res) => {
   }
 };
 
-// 🗑️ Eliminar usuario
+// ❌ Eliminar un usuario
 export const eliminarUsuario = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Solo el admin puede eliminar
-    if (req.usuario.rol !== "admin") {
-      return res
-        .status(403)
-        .json({ msg: "No tienes permisos para eliminar usuarios" });
-    }
-
     const usuario = await Usuario.findById(id);
     if (!usuario) {
       return res.status(404).json({ msg: "Usuario no encontrado" });
+    }
+
+    // Solo los SuperAdmins pueden eliminar usuarios
+    if (req.usuario.rol !== "superadmin") {
+      return res.status(403).json({ msg: "No tienes permiso para eliminar usuarios" });
     }
 
     await usuario.deleteOne();
@@ -158,5 +140,47 @@ export const eliminarUsuario = async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ msg: "Error al eliminar usuario" });
+  }
+};
+
+// 👑 Crear un SuperAdmin (solo para SuperAdmins)
+export const crearSuperAdmin = async (req, res) => {
+  try {
+    if (req.usuario.rol !== "superadmin") {
+      return res.status(403).json({
+        msg: "Acceso denegado: solo los SuperAdmins pueden crear otros SuperAdmins.",
+      });
+    }
+
+    const { nombre, email, password } = req.body;
+
+    if (!nombre || !email || !password) {
+      return res.status(400).json({ msg: "Todos los campos son obligatorios." });
+    }
+
+    const existeUsuario = await Usuario.findOne({ email });
+    if (existeUsuario) {
+      return res.status(400).json({ msg: "Ya existe un usuario con este correo." });
+    }
+
+    const nuevoSuperAdmin = await Usuario.create({
+      nombre,
+      email,
+      password,
+      rol: "superadmin",
+    });
+
+    res.status(201).json({
+      msg: "✅ SuperAdmin creado correctamente.",
+      usuario: {
+        id: nuevoSuperAdmin._id,
+        nombre: nuevoSuperAdmin.nombre,
+        email: nuevoSuperAdmin.email,
+        rol: nuevoSuperAdmin.rol,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error al crear SuperAdmin:", error);
+    res.status(500).json({ msg: "Error interno al crear el SuperAdmin." });
   }
 };

@@ -5,6 +5,7 @@ import {
   obtenerPerfil,
   actualizarUsuario,
   eliminarUsuario,
+  crearSuperAdmin, // ✅ añadimos esta importación
 } from "../controllers/usuarioController.js";
 import { protegerRuta } from "../middleware/authMiddleware.js";
 
@@ -22,5 +23,8 @@ router.put("/:id", protegerRuta, actualizarUsuario);
 
 // 🗑️ Eliminar usuario (protegido)
 router.delete("/:id", protegerRuta, eliminarUsuario);
+
+// 👑 Crear SuperAdmin (solo SuperAdmins)
+router.post("/crear-superadmin", protegerRuta, crearSuperAdmin);
 
 export default router;
