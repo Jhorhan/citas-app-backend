@@ -5,7 +5,9 @@ import connectDB from "./config/db.js";
 
 // 🔹 Importar rutas
 import usuarioRoutes from "./routes/usuarioRoutes.js";
-import servicioRoutes from "./routes/servicioRoutes.js"; // 👈 Nueva ruta
+import servicioRoutes from "./routes/servicioRoutes.js";
+import empresaRoutes from "./routes/empresaRoutes.js";
+import sedeRoutes from "./routes/sedeRoutes.js";
 
 // 🔹 Configuración inicial
 dotenv.config();
@@ -20,7 +22,9 @@ connectDB();
 
 // 🔹 Rutas principales
 app.use("/api/usuarios", usuarioRoutes);
-app.use("/api/servicios", servicioRoutes); // 👈 Aquí registramos el módulo de servicios
+app.use("/api/servicios", servicioRoutes);
+app.use("/api/empresas", empresaRoutes);
+app.use("/api/sedes", sedeRoutes);
 
 // 🔹 Ruta base (opcional)
 app.get("/", (req, res) => {
