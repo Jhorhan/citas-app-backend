@@ -4,7 +4,12 @@ const citaSchema = new mongoose.Schema(
   {
     usuario: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Usuario",
+      ref: "Usuario", // Cliente que agenda
+      required: true,
+    },
+    colaborador: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Usuario", // Colaborador que atiende
       required: true,
     },
     servicio: {
@@ -31,9 +36,7 @@ const citaSchema = new mongoose.Schema(
       default: "pendiente",
     },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
 const Cita = mongoose.model("Cita", citaSchema);
