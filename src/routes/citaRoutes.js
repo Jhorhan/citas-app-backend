@@ -6,7 +6,8 @@ import {
   actualizarCita,
   eliminarCita,
 } from "../controllers/citaController.js";
-import { protegerRuta, verificarRol } from "../middleware/authMiddleware.js";
+import { protegerRuta} from "../middleware/authMiddleware.js";
+import { verificarRol } from "../middleware/roleMiddleware.js";
 
 const router = express.Router();
 
