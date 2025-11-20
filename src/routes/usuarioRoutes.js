@@ -8,6 +8,9 @@ import {
   crearSuperAdmin, // ✅ añadimos esta importación
 } from "../controllers/usuarioController.js";
 import { protegerRuta } from "../middleware/authMiddleware.js";
+import { crearColaborador } from "../controllers/usuarioController.js";
+import { verificarRol } from "../middleware/roleMiddleware.js";
+
 
 const router = express.Router();
 
@@ -26,5 +29,13 @@ router.delete("/:id", protegerRuta, eliminarUsuario);
 
 // 👑 Crear SuperAdmin (solo SuperAdmins)
 router.post("/crear-superadmin", protegerRuta, crearSuperAdmin);
+
+
+router.post(
+  "/crear-colaborador",
+  protegerRuta,
+  verificarRol("admin", "superadmin"),
+  crearColaborador
+);
 
 export default router;

@@ -184,3 +184,44 @@ export const crearSuperAdmin = async (req, res) => {
     res.status(500).json({ msg: "Error interno al crear el SuperAdmin." });
   }
 };
+
+// 👷 Crear usuario colaborador (solo admin o superadmin)
+export const crearColaborador = async (req, res) => {
+  try {
+    // Solo admin o superadmin pueden crear colaboradores
+    if (!["admin", "superadmin"].includes(req.usuario.rol)) {
+      return res.status(403).json({ msg: "No tienes permisos para crear colaboradores" });
+    }
+
+    const { nombre, email, password } = req.body;
+
+    if (!nombre || !email || !password) {
+      return res.status(400).json({ msg: "Todos los campos son obligatorios" });
+    }
+
+    const existe = await Usuario.findOne({ email });
+    if (existe) {
+      return res.status(400).json({ msg: "El usuario ya existe" });
+    }
+
+    const nuevo = await Usuario.create({
+      nombre,
+      email,
+      password,
+      rol: "colaborador", // 🔥 IMPORTANTE: el admin NO puede crear otro admin
+    });
+
+    res.status(201).json({
+      msg: "Colaborador creado correctamente",
+      usuario: {
+        id: nuevo._id,
+        nombre: nuevo.nombre,
+        email: nuevo.email,
+        rol: nuevo.rol,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error al crear colaborador:", error);
+    res.status(500).json({ msg: "Error interno al crear colaborador" });
+  }
+};

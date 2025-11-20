@@ -4,12 +4,12 @@ const citaSchema = new mongoose.Schema(
   {
     usuario: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Usuario", // Cliente que agenda
+      ref: "Usuario",
       required: true,
     },
     colaborador: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Usuario", // Colaborador que atiende
+      ref: "Usuario",
       required: true,
     },
     servicio: {
@@ -22,14 +22,19 @@ const citaSchema = new mongoose.Schema(
       ref: "Sede",
       required: true,
     },
-    fecha: {
+
+    // Fecha y hora exacta de inicio
+    fechaHora: {
       type: Date,
       required: true,
     },
-    hora: {
-      type: String,
+
+    // Fecha y hora exacta de finalización
+    fechaFin: {
+      type: Date,
       required: true,
     },
+
     estado: {
       type: String,
       enum: ["pendiente", "confirmada", "cancelada"],
