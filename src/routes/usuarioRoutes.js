@@ -10,6 +10,7 @@ import {
 import { protegerRuta } from "../middleware/authMiddleware.js";
 import { crearColaborador } from "../controllers/usuarioController.js";
 import { verificarRol } from "../middleware/roleMiddleware.js";
+import { crearAdmin } from "../controllers/usuarioController.js";
 
 
 const router = express.Router();
@@ -37,5 +38,13 @@ router.post(
   verificarRol("admin", "superadmin"),
   crearColaborador
 );
+
+router.post(
+  "/crear-admin",
+  protegerRuta,
+  verificarRol("superadmin"), 
+  crearAdmin
+);
+
 
 export default router;

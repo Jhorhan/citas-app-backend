@@ -22,10 +22,30 @@ const usuarioSchema = new mongoose.Schema(
     },
     rol: {
       type: String,
-      enum: ["cliente", "admin","superadmin", "colaborador"],
+      enum: ["cliente", "admin", "superadmin", "colaborador"],
       default: "cliente",
     },
+
+    // Empresa requerida solo para admin y colaborador
+    empresa: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Empresa",
+      required: function () {
+        return this.rol === "admin" || this.rol === "colaborador";
+      },
+    },
+
+
+    // Sede requerida solo para admin y colaborador
+    sede: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Sede",
+      required: function () {
+        return this.rol === "admin" || this.rol === "colaborador";
+      },
+    },
   },
+  
   {
     timestamps: true,
   }

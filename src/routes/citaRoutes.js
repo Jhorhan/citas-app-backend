@@ -1,10 +1,11 @@
 import express from "express";
 import {
+  obtenerHuecosDisponibles,
   crearCita,
   listarCitas,
   obtenerCita,
   actualizarCita,
-  eliminarCita,
+  eliminarCita
 } from "../controllers/citaController.js";
 
 import { protegerRuta } from "../middleware/authMiddleware.js";
@@ -12,50 +13,54 @@ import { verificarRol } from "../middleware/roleMiddleware.js";
 
 const router = express.Router();
 
-/*
-ROLES:
+// ==========================================================
+// 🔍 OBTENER HUECOS DISPONIBLES (Público autenticado)
+// GET /api/citas/huecos
+// ==========================================================
+router.get("/huecos", protegerRuta, obtenerHuecosDisponibles);
 
-cliente → crea citas
-colaborador → ve sus citas
-admin → maneja todas las citas de su empresa
-superadmin → ve todo el sistema
-*/
-
-// Crear cita (solo clientes)
+// ==========================================================
+// 📅 CREAR CITA (Solo CLIENTE)
+// POST /api/citas
+// ==========================================================
 router.post(
-  "/",
-  protegerRuta,
-  verificarRol("cliente"),
+  "/", 
+  protegerRuta, 
+  verificarRol("cliente"), 
   crearCita
 );
 
-// Listar citas
-router.get(
-  "/",
-  protegerRuta,
-  listarCitas
-);
+// ==========================================================
+// 📋 LISTAR CITAS (Cliente: sus citas / Colaborador: sus citas / Admin: todas)
+// GET /api/citas
+// ==========================================================
+router.get("/", protegerRuta, listarCitas);
 
-// Obtener cita
-router.get(
-  "/:id",
-  protegerRuta,
-  obtenerCita
-);
+// ==========================================================
+// 🔍 OBTENER UNA CITA
+// GET /api/citas/:id
+// ==========================================================
+router.get("/:id", protegerRuta, obtenerCita);
 
-// Actualizar cita → admin y superadmin
+// ==========================================================
+// ✏️ ACTUALIZAR CITA (Admin / Superadmin)
+// PUT /api/citas/:id
+// ==========================================================
 router.put(
-  "/:id",
-  protegerRuta,
-  verificarRol("admin", "superadmin"),
+  "/:id", 
+  protegerRuta, 
+  verificarRol("admin", "superadmin"), 
   actualizarCita
 );
 
-// Eliminar cita → admin y superadmin
+// ==========================================================
+// 🗑️ ELIMINAR CITA (Admin / Superadmin)
+// DELETE /api/citas/:id
+// ==========================================================
 router.delete(
-  "/:id",
-  protegerRuta,
-  verificarRol("admin", "superadmin"),
+  "/:id", 
+  protegerRuta, 
+  verificarRol("admin", "superadmin"), 
   eliminarCita
 );
 

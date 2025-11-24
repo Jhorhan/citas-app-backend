@@ -9,6 +9,7 @@ import servicioRoutes from "./routes/servicioRoutes.js";
 import empresaRoutes from "./routes/empresaRoutes.js";
 import sedeRoutes from "./routes/sedeRoutes.js";
 import citaRoutes from "./routes/citaRoutes.js";
+import disponibilidadRoutes from "./routes/disponibilidadRoutes.js";
 
 // 🔹 Configuración inicial
 dotenv.config();
@@ -27,6 +28,7 @@ app.use("/api/servicios", servicioRoutes);
 app.use("/api/empresas", empresaRoutes);
 app.use("/api/sedes", sedeRoutes);
 app.use("/api/citas", citaRoutes);
+app.use("/api/disponibilidad", disponibilidadRoutes);
 
 // 🔹 Ruta base (opcional)
 app.get("/", (req, res) => {

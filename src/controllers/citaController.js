@@ -3,6 +3,14 @@ import Usuario from "../models/Usuario.js";
 import Servicio from "../models/Servicio.js";
 import Sede from "../models/Sede.js";
 import Disponibilidad from "../models/Disponibilidad.js";
+import { DateTime } from "luxon";
+
+// ==========================================================
+// 📌 FORZAR FECHA AL HUSO HORARIO COLOMBIA (UTC-5)
+// ==========================================================
+const fechaColombia = (fechaISO) => {
+  return DateTime.fromISO(fechaISO, { zone: "America/Bogota" }).toJSDate();
+};
 
 // ==========================================================
 // 🧩 CALCULAR FECHA FIN
@@ -12,16 +20,15 @@ const calcularFechaFin = (inicio, duracionMin) => {
 };
 
 // ==========================================================
-// 📌 CONVERTIR HH:MM A DATE
+// 📌 COMBINAR FECHA + HH:MM EN COLOMBIA
 // ==========================================================
-const combinarFechaHora = (fecha, hora) => {
+const combinarFechaHora = (fechaBase, hora) => {
+  const fecha = DateTime.fromJSDate(fechaBase, { zone: "America/Bogota" });
   const [h, m] = hora.split(":");
-  const nueva = new Date(fecha);
-  nueva.setHours(h);
-  nueva.setMinutes(m);
-  nueva.setSeconds(0);
-  nueva.setMilliseconds(0);
-  return nueva;
+
+  return fecha
+    .set({ hour: parseInt(h), minute: parseInt(m), second: 0, millisecond: 0 })
+    .toJSDate();
 };
 
 // ==========================================================
@@ -42,7 +49,9 @@ export const obtenerHuecosDisponibles = async (req, res) => {
 
     const duracion = infoServicio.duracion;
 
-    const dia = new Date(fecha).getDay();
+    // Convertir fecha a Colombia
+    const fechaCol = fechaColombia(fecha);
+    const dia = fechaCol.getDay();
 
     const disponibilidad = await Disponibilidad.findOne({
       sede,
@@ -53,16 +62,14 @@ export const obtenerHuecosDisponibles = async (req, res) => {
     if (!disponibilidad)
       return res.status(404).json({ msg: "No hay disponibilidad ese día" });
 
-    const horaInicio = combinarFechaHora(fecha, disponibilidad.horaInicio);
-    const horaFin = combinarFechaHora(fecha, disponibilidad.horaFin);
+    const horaInicio = combinarFechaHora(fechaCol, disponibilidad.horaInicio);
+    const horaFin = combinarFechaHora(fechaCol, disponibilidad.horaFin);
 
-    // Traer citas existentes del colaborador ese día
     const citas = await Cita.find({
       colaborador,
       fechaHora: { $gte: horaInicio, $lt: horaFin },
     });
 
-    // Generar slots
     const huecos = [];
     let cursor = new Date(horaInicio);
 
@@ -77,10 +84,7 @@ export const obtenerHuecosDisponibles = async (req, res) => {
       );
 
       if (!traslape) {
-        huecos.push({
-          inicio: inicioSlot,
-          fin: finSlot,
-        });
+        huecos.push({ inicio: inicioSlot, fin: finSlot });
       }
 
       cursor = new Date(cursor.getTime() + duracion * 60000);
@@ -104,16 +108,46 @@ export const crearCita = async (req, res) => {
       return res.status(400).json({ msg: "Todos los campos son obligatorios" });
     }
 
+    // Convertimos fecha a zona horaria Colombia
+    const inicio = fechaColombia(fechaHora);
+
     const infoServicio = await Servicio.findById(servicio);
     if (!infoServicio) {
       return res.status(404).json({ msg: "Servicio no encontrado" });
     }
 
     const duracion = infoServicio.duracion;
-    const inicio = new Date(fechaHora);
     const fin = calcularFechaFin(inicio, duracion);
 
-    // Validar traslapes
+    // ==========================================
+    // ⭐ VALIDAR HORARIO DEL COLABORADOR
+    // ==========================================
+    const dia = inicio.getDay();
+
+    const disponibilidad = await Disponibilidad.findOne({
+      sede,
+      colaborador,
+      diaSemana: dia,
+    });
+
+    if (!disponibilidad) {
+      return res.status(400).json({
+        msg: "El colaborador no trabaja este día",
+      });
+    }
+
+    const horaInicio = combinarFechaHora(inicio, disponibilidad.horaInicio);
+    const horaFin = combinarFechaHora(inicio, disponibilidad.horaFin);
+
+    if (inicio < horaInicio || fin > horaFin) {
+      return res.status(400).json({
+        msg: "Horario fuera de la disponibilidad del colaborador",
+      });
+    }
+
+    // ==========================================
+    // ⛔ VALIDAR TRASLAPES
+    // ==========================================
     const citaTraslapada = await Cita.findOne({
       colaborador,
       $and: [{ fechaHora: { $lt: fin } }, { fechaFin: { $gt: inicio } }],
@@ -125,6 +159,7 @@ export const crearCita = async (req, res) => {
       });
     }
 
+    // Crear cita
     const nuevaCita = await Cita.create({
       usuario: req.usuario._id,
       colaborador,
@@ -154,8 +189,6 @@ export const listarCitas = async (req, res) => {
 
     switch (req.usuario.rol) {
       case "superadmin":
-        filtro = {};
-        break;
       case "admin":
         filtro = {};
         break;
@@ -211,7 +244,7 @@ export const obtenerCita = async (req, res) => {
 };
 
 // ==========================================================
-// ✏️ ACTUALIZAR CITA
+// ✏️ ACTUALIZAR CITA (Con validación de horarios y traslapes)
 // ==========================================================
 export const actualizarCita = async (req, res) => {
   try {
@@ -224,28 +257,92 @@ export const actualizarCita = async (req, res) => {
     if (!["admin", "superadmin"].includes(req.usuario.rol))
       return res.status(403).json({ msg: "No tienes permisos" });
 
-    if (servicio) {
-      const infoServicio = await Servicio.findById(servicio);
-      const duracion = infoServicio.duracion;
+    // ---------------------------------------------
+    // OBTENER NUEVOS VALORES (si vienen)
+    // ---------------------------------------------
+    const nuevoServicio = servicio || cita.servicio;
+    const nuevaSede = sede || cita.sede;
+    const nuevoColaborador = colaborador || cita.colaborador;
 
-      const nuevoInicio = fechaHora ? new Date(fechaHora) : cita.fechaHora;
-      const nuevoFin = calcularFechaFin(nuevoInicio, duracion);
+    // Si se envía fecha, convertirla a Colombia, si no dejar la misma
+    const nuevoInicio = fechaHora ? fechaColombia(fechaHora) : cita.fechaHora;
 
-      cita.servicio = servicio;
-      cita.fechaHora = nuevoInicio;
-      cita.fechaFin = nuevoFin;
+    // OBTENER DURACIÓN DEL SERVICIO
+    const infoServicio = await Servicio.findById(nuevoServicio);
+    if (!infoServicio) {
+      return res.status(404).json({ msg: "Servicio no encontrado" });
     }
 
-    if (sede) cita.sede = sede;
-    if (colaborador) cita.colaborador = colaborador;
+    const duracion = infoServicio.duracion;
+    const nuevoFin = calcularFechaFin(nuevoInicio, duracion);
+
+    // ---------------------------------------------
+    // VALIDAR HORARIO DISPONIBLE
+    // ---------------------------------------------
+    const dia = nuevoInicio.getDay();
+
+    const disponibilidad = await Disponibilidad.findOne({
+      sede: nuevaSede,
+      colaborador: nuevoColaborador,
+      diaSemana: dia,
+    });
+
+    if (!disponibilidad) {
+      return res.status(400).json({
+        msg: "El colaborador no trabaja este día",
+      });
+    }
+
+    const horaInicio = combinarFechaHora(nuevoInicio, disponibilidad.horaInicio);
+    const horaFin = combinarFechaHora(nuevoInicio, disponibilidad.horaFin);
+
+    if (nuevoInicio < horaInicio || nuevoFin > horaFin) {
+      return res.status(400).json({
+        msg: "Horario fuera de la disponibilidad del colaborador",
+      });
+    }
+
+    // ---------------------------------------------
+    // VALIDAR TRASLAPES (¡EXCLUYENDO ESTA MISMA CITA!)
+    // ---------------------------------------------
+    const traslape = await Cita.findOne({
+      _id: { $ne: cita._id }, // EXCLUIR ESTA CITA
+      colaborador: nuevoColaborador,
+      $and: [
+        { fechaHora: { $lt: nuevoFin } },
+        { fechaFin: { $gt: nuevoInicio } }
+      ],
+    });
+
+    if (traslape) {
+      return res.status(400).json({
+        msg: "Este horario ya está ocupado por otra cita",
+      });
+    }
+
+    // ---------------------------------------------
+    // GUARDAR CAMBIOS
+    // ---------------------------------------------
+    cita.servicio = nuevoServicio;
+    cita.sede = nuevaSede;
+    cita.colaborador = nuevoColaborador;
+    cita.fechaHora = nuevoInicio;
+    cita.fechaFin = nuevoFin;
     if (estado) cita.estado = estado;
 
     const citaActualizada = await cita.save();
-    res.json({ msg: "Cita actualizada", cita: citaActualizada });
+
+    res.json({
+      msg: "Cita actualizada correctamente",
+      cita: citaActualizada,
+    });
+
   } catch (error) {
+    console.error(error);
     res.status(500).json({ msg: "Error al actualizar cita" });
   }
 };
+
 
 // ==========================================================
 // 🗑️ ELIMINAR CITA

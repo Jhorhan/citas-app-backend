@@ -11,7 +11,7 @@ const generarToken = (id) => {
   });
 };
 
-// 🧍 Registrar nuevo usuario
+// 🧍 Registrar nuevo usuario (cliente por defecto)
 export const registrarUsuario = async (req, res) => {
   try {
     const { nombre, email, password } = req.body;
@@ -61,6 +61,8 @@ export const loginUsuario = async (req, res) => {
         nombre: usuario.nombre,
         email: usuario.email,
         rol: usuario.rol,
+        empresa: usuario.empresa,
+        sede: usuario.sede,
         token: generarToken(usuario._id),
       },
     });
@@ -73,7 +75,11 @@ export const loginUsuario = async (req, res) => {
 // 👤 Obtener perfil del usuario autenticado
 export const obtenerPerfil = async (req, res) => {
   try {
-    const usuario = await Usuario.findById(req.usuario.id).select("-password");
+    const usuario = await Usuario.findById(req.usuario.id)
+      .select("-password")
+      .populate("empresa")
+      .populate("sede");
+
     res.json(usuario);
   } catch (error) {
     console.error(error);
@@ -81,26 +87,47 @@ export const obtenerPerfil = async (req, res) => {
   }
 };
 
-// ⚙️ Actualizar datos de un usuario
+// ⚙️ Actualizar usuario
 export const actualizarUsuario = async (req, res) => {
   try {
     const { id } = req.params;
-    const { nombre, email, password, rol } = req.body;
+    const { nombre, email, password, rol, empresa, sede } = req.body;
 
     const usuario = await Usuario.findById(id);
     if (!usuario) {
       return res.status(404).json({ msg: "Usuario no encontrado" });
     }
 
-    // Solo SuperAdmins pueden cambiar roles
+    // Solo SuperAdmin puede cambiar roles
     if (rol && req.usuario.rol !== "superadmin") {
-      return res.status(403).json({ msg: "No tienes permiso para cambiar el rol de usuario" });
+      return res.status(403).json({
+        msg: "No tienes permiso para cambiar el rol de usuario",
+      });
+    }
+    // Solo SuperAdmin puede cambiar sedes
+
+    if (sede && req.usuario.rol !== "superadmin") {
+      return res.status(403).json({
+        msg: "No tienes permiso para cambiar la sede",
+      });
+    }
+
+
+    // Solo el superadmin puede cambiar empresa
+    if (empresa && req.usuario.rol !== "superadmin") {
+      return res.status(403).json({
+        msg: "No tienes permiso para cambiar la empresa",
+      });
     }
 
     usuario.nombre = nombre || usuario.nombre;
     usuario.email = email || usuario.email;
     if (password) usuario.password = password;
-    if (rol && req.usuario.rol === "superadmin") usuario.rol = rol;
+
+    if (rol) usuario.rol = rol;
+    if (empresa) usuario.empresa = empresa;
+    if (sede) usuario.sede = sede;
+
 
     await usuario.save();
 
@@ -111,6 +138,8 @@ export const actualizarUsuario = async (req, res) => {
         nombre: usuario.nombre,
         email: usuario.email,
         rol: usuario.rol,
+        empresa: usuario.empresa,
+        sede: usuario.sede,
       },
     });
   } catch (error) {
@@ -129,13 +158,11 @@ export const eliminarUsuario = async (req, res) => {
       return res.status(404).json({ msg: "Usuario no encontrado" });
     }
 
-    // Solo los SuperAdmins pueden eliminar usuarios
     if (req.usuario.rol !== "superadmin") {
       return res.status(403).json({ msg: "No tienes permiso para eliminar usuarios" });
     }
 
     await usuario.deleteOne();
-
     res.json({ msg: "Usuario eliminado correctamente" });
   } catch (error) {
     console.error(error);
@@ -143,27 +170,21 @@ export const eliminarUsuario = async (req, res) => {
   }
 };
 
-// 👑 Crear un SuperAdmin (solo para SuperAdmins)
+// 👑 Crear SuperAdmin
 export const crearSuperAdmin = async (req, res) => {
   try {
     if (req.usuario.rol !== "superadmin") {
       return res.status(403).json({
-        msg: "Acceso denegado: solo los SuperAdmins pueden crear otros SuperAdmins.",
+        msg: "Acceso denegado: solo SuperAdmins.",
       });
     }
 
     const { nombre, email, password } = req.body;
 
-    if (!nombre || !email || !password) {
-      return res.status(400).json({ msg: "Todos los campos son obligatorios." });
-    }
+    const existe = await Usuario.findOne({ email });
+    if (existe) return res.status(400).json({ msg: "El correo ya existe" });
 
-    const existeUsuario = await Usuario.findOne({ email });
-    if (existeUsuario) {
-      return res.status(400).json({ msg: "Ya existe un usuario con este correo." });
-    }
-
-    const nuevoSuperAdmin = await Usuario.create({
+    const nuevo = await Usuario.create({
       nombre,
       email,
       password,
@@ -171,32 +192,82 @@ export const crearSuperAdmin = async (req, res) => {
     });
 
     res.status(201).json({
-      msg: "✅ SuperAdmin creado correctamente.",
-      usuario: {
-        id: nuevoSuperAdmin._id,
-        nombre: nuevoSuperAdmin.nombre,
-        email: nuevoSuperAdmin.email,
-        rol: nuevoSuperAdmin.rol,
-      },
+      msg: "SuperAdmin creado correctamente",
+      usuario: nuevo,
     });
   } catch (error) {
-    console.error("❌ Error al crear SuperAdmin:", error);
-    res.status(500).json({ msg: "Error interno al crear el SuperAdmin." });
+    console.error(error);
+    res.status(500).json({ msg: "Error al crear superadmin" });
   }
 };
 
-// 👷 Crear usuario colaborador (solo admin o superadmin)
+// 👑 Crear usuario ADMIN (solo SuperAdmins)
+export const crearAdmin = async (req, res) => {
+  try {
+    // Solo superadmin puede crear otros admins
+    if (req.usuario.rol !== "superadmin") {
+      return res.status(403).json({
+        msg: "Acceso denegado: solo los SuperAdmins pueden crear Admins",
+      });
+    }
+
+    const { nombre, email, password, empresa, sede } = req.body;
+
+    if (!nombre || !email || !password || !empresa|| !sede) {
+      return res.status(400).json({ msg: "Todos los campos son obligatorios (nombre, email, password, empresa, sede)" });
+    }
+
+    const existe = await Usuario.findOne({ email });
+    if (existe) {
+      return res.status(400).json({ msg: "El usuario ya existe" });
+    }
+
+    const nuevoAdmin = await Usuario.create({
+      nombre,
+      email,
+      password,
+      rol: "admin",
+      empresa,
+      sede,
+    });
+
+    res.status(201).json({
+      msg: "Admin creado correctamente",
+      usuario: {
+        id: nuevoAdmin._id,
+        nombre: nuevoAdmin.nombre,
+        email: nuevoAdmin.email,
+        rol: nuevoAdmin.rol,
+        empresa: nuevoAdmin.empresa,
+        sede: nuevoAdmin.sede,
+      },
+    });
+
+  } catch (error) {
+    console.error("❌ Error al crear admin:", error);
+    res.status(500).json({ msg: "Error interno al crear admin" });
+  }
+};
+
+// 👷 Crear colaborador (admin o superadmin)
 export const crearColaborador = async (req, res) => {
   try {
-    // Solo admin o superadmin pueden crear colaboradores
     if (!["admin", "superadmin"].includes(req.usuario.rol)) {
       return res.status(403).json({ msg: "No tienes permisos para crear colaboradores" });
     }
 
-    const { nombre, email, password } = req.body;
+    const { nombre, email, password, sede } = req.body;
 
-    if (!nombre || !email || !password) {
-      return res.status(400).json({ msg: "Todos los campos son obligatorios" });
+    
+    // Validar que la sede exista
+    const sedeBD = await Sede.findById(sede);
+    if (!sedeBD) {
+      return res.status(400).json({ msg: "La sede no existe" });
+    }
+
+    // Validar que la sede pertenezca a la empresa del admin
+    if (String(sedeBD.empresa) !== String(req.usuario.empresa)) {
+      return res.status(400).json({ msg: "La sede no pertenece a tu empresa" });
     }
 
     const existe = await Usuario.findOne({ email });
@@ -208,20 +279,17 @@ export const crearColaborador = async (req, res) => {
       nombre,
       email,
       password,
-      rol: "colaborador", // 🔥 IMPORTANTE: el admin NO puede crear otro admin
+      rol: "colaborador",
+      empresa: req.usuario.empresa, // 🔥 Asignar empresa automáticamente
+      sede, 
     });
 
     res.status(201).json({
       msg: "Colaborador creado correctamente",
-      usuario: {
-        id: nuevo._id,
-        nombre: nuevo.nombre,
-        email: nuevo.email,
-        rol: nuevo.rol,
-      },
+      usuario: nuevo,
     });
   } catch (error) {
-    console.error("❌ Error al crear colaborador:", error);
+    console.error("Error al crear colaborador:", error);
     res.status(500).json({ msg: "Error interno al crear colaborador" });
   }
 };
