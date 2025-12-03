@@ -1,6 +1,7 @@
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
+import cookieParser from "cookie-parser"; 
 import connectDB from "./config/db.js";
 
 // 🔹 Importar rutas
@@ -16,8 +17,14 @@ dotenv.config();
 const app = express();
 
 // 🔹 Middleware
-app.use(cors());
 app.use(express.json());
+
+app.use(cookieParser());
+
+app.use(cors({
+  origin: "http://localhost:3000",
+  credentials: true  // ⬅️ PERMITE ENVIAR COOKIES DESDE FRONT
+}));
 
 // 🔹 Conexión a la base de datos
 connectDB();

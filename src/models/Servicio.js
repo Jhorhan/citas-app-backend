@@ -28,6 +28,15 @@ const servicioSchema = new mongoose.Schema(
       ref: "Empresa",
       required: true,
     },
+
+    sede: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Sede",
+      required: function () {
+        return this.rol === "admin" || this.rol === "colaborador";
+      }
+    },
+
   },
   {
     timestamps: true,
