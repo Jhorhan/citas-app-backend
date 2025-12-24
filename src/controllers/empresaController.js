@@ -135,3 +135,15 @@ export const eliminarEmpresa = async (req, res) => {
     res.status(500).json({ msg: "Error al eliminar empresa" });
   }
 };
+
+export const getEmpresasPublic = async (req, res) => {
+  try {
+    const empresas = await Empresa.find({}, "nombre slug logo sector");
+    res.json(empresas);
+  } catch (error) {
+    console.error("Error listando empresas públicas:", error);
+    res.status(500).json({ msg: "Error al obtener empresas" });
+  }
+};
+
+

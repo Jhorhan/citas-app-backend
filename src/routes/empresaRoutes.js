@@ -6,7 +6,8 @@ import {
   obtenerEmpresa,
   actualizarEmpresa,
   eliminarEmpresa,
-  obtenerEmpresaPorSlug,   // ✅ IMPORTANTE
+  obtenerEmpresaPorSlug,
+  getEmpresasPublic,   // ✅ IMPORTANTE
 } from "../controllers/empresaController.js";
 
 const router = express.Router();
@@ -15,6 +16,7 @@ const router = express.Router();
    🔓 Rutas Públicas (NO requieren login)
 ============================ */
 router.get("/slug/:slug", obtenerEmpresaPorSlug);   // ⭐ NUEVA RUTA PÚBLICA
+router.get("/public", getEmpresasPublic);
 
 /* ============================
    🔐 Rutas Protegidas

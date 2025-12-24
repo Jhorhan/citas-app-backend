@@ -1,28 +1,67 @@
 import Usuario from "../models/Usuario.js";
-import Sede from "../models/Sede.js"; // necesario para validar colaboradores
+import Empresa from "../models/Empresa.js";
+import Sede from "../models/Sede.js";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
 
 dotenv.config();
 const JWT_SECRET = process.env.JWT_SECRET;
 
-// 🔑 Generar token JWT
+// 🔑 Generar token
 const generarToken = (id) => {
-  return jwt.sign({ id }, JWT_SECRET, {
-    expiresIn: "30d",
-  });
+  return jwt.sign({ id }, JWT_SECRET, { expiresIn: "30d" });
 };
 
-// 🧍 Registrar nuevo usuario (cliente por defecto)
+
+// Registro nuevo usuario 
+
 export const registrarUsuario = async (req, res) => {
   try {
-    const { nombre, email, password } = req.body;
+    const { nombre, email, password, googleId, empresaSlug } = req.body;
+
+    // 🔴 Validaciones básicas
+    if (!empresaSlug) {
+      return res.status(400).json({ msg: "Empresa no especificada" });
+    }
+
+    const empresa = await Empresa.findOne({ slug: empresaSlug });
+    if (!empresa) {
+      return res.status(404).json({ msg: "La empresa no existe" });
+    }
 
     const existeUsuario = await Usuario.findOne({ email });
-    if (existeUsuario)
-      return res.status(400).json({ msg: "El correo ya está registrado" });
 
-    const usuario = await Usuario.create({ nombre, email, password });
+    // ❌ Ya existe con Google
+    if (existeUsuario && existeUsuario.googleId) {
+      return res.status(400).json({
+        msg: "Este correo ya está registrado mediante Google",
+      });
+    }
+
+    // ❌ Ya existe normal
+    if (existeUsuario) {
+      return res.status(400).json({
+        msg: "El correo ya está registrado",
+      });
+    }
+
+    // ❌ Registro normal sin contraseña
+    if (!googleId && !password) {
+      return res.status(400).json({
+        msg: "La contraseña es obligatoria",
+      });
+    }
+
+    // ✅ Crear usuario CLIENTE asociado a empresa
+    const usuario = await Usuario.create({
+      nombre,
+      email,
+      password: googleId ? null : password,
+      googleId: googleId || null,
+      authProvider: googleId ? "google" : "local",
+      rol: "cliente",
+      empresa: empresa._id, 
+    });
 
     res.status(201).json({
       msg: "Usuario registrado correctamente",
@@ -31,31 +70,43 @@ export const registrarUsuario = async (req, res) => {
         nombre: usuario.nombre,
         email: usuario.email,
         rol: usuario.rol,
+        empresa: usuario.empresa,
         token: generarToken(usuario._id),
       },
     });
+
   } catch (error) {
     console.error(error);
     res.status(500).json({ msg: "Error al registrar usuario" });
   }
 };
 
+// =======================
 // 🔐 Login de usuario
+// =======================
 export const loginUsuario = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const usuario = await Usuario.findOne({ email });
-    if (!usuario) return res.status(400).json({ msg: "Usuario no encontrado" });
+    const usuario = await Usuario.findOne({ email }).populate("empresa");
+    if (!usuario)
+      return res.status(400).json({ msg: "Usuario no encontrado" });
+
+    if (usuario.googleId) {
+      return res.status(400).json({
+        msg: "Este usuario se registró con Google",
+      });
+    }
 
     const passwordValido = await usuario.compararPassword(password);
     if (!passwordValido)
       return res.status(400).json({ msg: "Contraseña incorrecta" });
 
-    // Opcional: enviar token también en cookie
-    res.cookie("token", generarToken(usuario._id), {
+    const token = generarToken(usuario._id);
+
+    res.cookie("token", token, {
       httpOnly: true,
-      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 días
+      maxAge: 30 * 24 * 60 * 60 * 1000,
     });
 
     res.json({
@@ -65,18 +116,29 @@ export const loginUsuario = async (req, res) => {
         nombre: usuario.nombre,
         email: usuario.email,
         rol: usuario.rol,
-        empresa: usuario.empresa,
+
+        //respuesta con slug
+        empresa: {
+          id: usuario.empresa?._id,
+          nombre: usuario.empresa?.nombre,
+          slug: usuario.empresa?.slug,
+        },
+
         sede: usuario.sede,
-        token: generarToken(usuario._id),
+        token,
       },
     });
+
   } catch (error) {
     console.error(error);
     res.status(500).json({ msg: "Error al iniciar sesión" });
   }
 };
 
-// 👤 Obtener perfil del usuario autenticado
+
+// =======================
+// 👤 Obtener perfil
+// =======================
 export const obtenerPerfil = async (req, res) => {
   try {
     const usuario = await Usuario.findById(req.usuario._id)
@@ -91,25 +153,39 @@ export const obtenerPerfil = async (req, res) => {
   }
 };
 
+// =======================
 // ⚙️ Actualizar usuario
+// =======================
 export const actualizarUsuario = async (req, res) => {
   try {
     const { id } = req.params;
     const { nombre, email, password, rol, empresa, sede } = req.body;
 
     const usuario = await Usuario.findById(id);
-    if (!usuario) return res.status(404).json({ msg: "Usuario no encontrado" });
+    if (!usuario)
+      return res.status(404).json({ msg: "Usuario no encontrado" });
 
     if (rol && req.usuario.rol !== "superadmin")
-      return res.status(403).json({ msg: "No tienes permiso para cambiar el rol de usuario" });
+      return res.status(403).json({ msg: "No tienes permiso para cambiar el rol" });
+
     if (empresa && req.usuario.rol !== "superadmin")
       return res.status(403).json({ msg: "No tienes permiso para cambiar la empresa" });
+
     if (sede && req.usuario.rol !== "superadmin")
       return res.status(403).json({ msg: "No tienes permiso para cambiar la sede" });
 
     usuario.nombre = nombre || usuario.nombre;
     usuario.email = email || usuario.email;
-    if (password) usuario.password = password;
+
+    if (password) {
+      if (usuario.googleId) {
+        return res.status(400).json({
+          msg: "Usuario Google no puede cambiar contraseña",
+        });
+      }
+      usuario.password = password;
+    }
+
     if (rol) usuario.rol = rol;
     if (empresa) usuario.empresa = empresa;
     if (sede) usuario.sede = sede;
@@ -118,107 +194,106 @@ export const actualizarUsuario = async (req, res) => {
 
     res.json({
       msg: "Usuario actualizado correctamente",
-      usuario: {
-        id: usuario._id,
-        nombre: usuario.nombre,
-        email: usuario.email,
-        rol: usuario.rol,
-        empresa: usuario.empresa,
-        sede: usuario.sede,
-      },
+      usuario,
     });
+
   } catch (error) {
     console.error(error);
     res.status(500).json({ msg: "Error al actualizar usuario" });
   }
 };
 
-// ❌ Eliminar un usuario
+// =======================
+// ❌ Eliminar usuario
+// =======================
 export const eliminarUsuario = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const usuario = await Usuario.findById(id);
-    if (!usuario) return res.status(404).json({ msg: "Usuario no encontrado" });
-
     if (req.usuario.rol !== "superadmin")
-      return res.status(403).json({ msg: "No tienes permiso para eliminar usuarios" });
+      return res.status(403).json({ msg: "No tienes permiso" });
 
-    await usuario.deleteOne();
+    await Usuario.findByIdAndDelete(id);
     res.json({ msg: "Usuario eliminado correctamente" });
+
   } catch (error) {
     console.error(error);
     res.status(500).json({ msg: "Error al eliminar usuario" });
   }
 };
 
+// =======================
 // 👑 Crear SuperAdmin
+// =======================
 export const crearSuperAdmin = async (req, res) => {
   try {
     if (req.usuario.rol !== "superadmin")
-      return res.status(403).json({ msg: "Acceso denegado: solo SuperAdmins." });
+      return res.status(403).json({ msg: "Acceso denegado" });
 
     const { nombre, email, password } = req.body;
 
     const existe = await Usuario.findOne({ email });
-    if (existe) return res.status(400).json({ msg: "El correo ya existe" });
+    if (existe)
+      return res.status(400).json({ msg: "El correo ya existe" });
 
-    const nuevo = await Usuario.create({ nombre, email, password, rol: "superadmin" });
+    const nuevo = await Usuario.create({
+      nombre,
+      email,
+      password,
+      rol: "superadmin",
+    });
 
-    res.status(201).json({ msg: "SuperAdmin creado correctamente", usuario: nuevo });
+    res.status(201).json({ msg: "SuperAdmin creado", usuario: nuevo });
+
   } catch (error) {
     console.error(error);
     res.status(500).json({ msg: "Error al crear superadmin" });
   }
 };
 
-// 👑 Crear usuario ADMIN (solo SuperAdmins)
+// =======================
+// 👑 Crear Admin
+// =======================
 export const crearAdmin = async (req, res) => {
   try {
     if (req.usuario.rol !== "superadmin")
-      return res.status(403).json({ msg: "Acceso denegado: solo SuperAdmins pueden crear Admins" });
+      return res.status(403).json({ msg: "Acceso denegado" });
 
     const { nombre, email, password, empresa, sede } = req.body;
-    if (!nombre || !email || !password || !empresa || !sede)
-      return res.status(400).json({ msg: "Todos los campos son obligatorios" });
 
-    const existe = await Usuario.findOne({ email });
-    if (existe) return res.status(400).json({ msg: "El usuario ya existe" });
-
-    const nuevoAdmin = await Usuario.create({ nombre, email, password, rol: "admin", empresa, sede });
-
-    res.status(201).json({
-      msg: "Admin creado correctamente",
-      usuario: {
-        id: nuevoAdmin._id,
-        nombre: nuevoAdmin.nombre,
-        email: nuevoAdmin.email,
-        rol: nuevoAdmin.rol,
-        empresa: nuevoAdmin.empresa,
-        sede: nuevoAdmin.sede,
-      },
+    const nuevoAdmin = await Usuario.create({
+      nombre,
+      email,
+      password,
+      rol: "admin",
+      empresa,
+      sede,
     });
+
+    res.status(201).json({ msg: "Admin creado", usuario: nuevoAdmin });
+
   } catch (error) {
     console.error(error);
-    res.status(500).json({ msg: "Error interno al crear admin" });
+    res.status(500).json({ msg: "Error al crear admin" });
   }
 };
 
-// 👷 Crear colaborador (admin o superadmin)
+// =======================
+// 👷 Crear Colaborador
+// =======================
 export const crearColaborador = async (req, res) => {
   try {
     if (!["admin", "superadmin"].includes(req.usuario.rol))
-      return res.status(403).json({ msg: "No tienes permisos para crear colaboradores" });
+      return res.status(403).json({ msg: "No tienes permisos" });
 
     const { nombre, email, password, sede } = req.body;
 
     const sedeBD = await Sede.findById(sede);
-    if (!sedeBD) return res.status(400).json({ msg: "La sede no existe" });
+    if (!sedeBD)
+      return res.status(400).json({ msg: "La sede no existe" });
+
     if (String(sedeBD.empresa) !== String(req.usuario.empresa))
       return res.status(400).json({ msg: "La sede no pertenece a tu empresa" });
-
-    const existe = await Usuario.findOne({ email });
-    if (existe) return res.status(400).json({ msg: "El usuario ya existe" });
 
     const nuevo = await Usuario.create({
       nombre,
@@ -229,9 +304,10 @@ export const crearColaborador = async (req, res) => {
       sede,
     });
 
-    res.status(201).json({ msg: "Colaborador creado correctamente", usuario: nuevo });
+    res.status(201).json({ msg: "Colaborador creado", usuario: nuevo });
+
   } catch (error) {
     console.error(error);
-    res.status(500).json({ msg: "Error interno al crear colaborador" });
+    res.status(500).json({ msg: "Error al crear colaborador" });
   }
 };

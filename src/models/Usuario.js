@@ -15,10 +15,21 @@ const usuarioSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
     },
+      // 🔐 Password opcional para permitir Google Auth
     password: {
       type: String,
-      required: true,
       minlength: 6,
+    },
+
+    googleId: {
+      type: String,
+      default: null,
+    },
+    
+    authProvider: {
+      type: String,
+      enum: ["local", "google"],
+      default: "local"
     },
     rol: {
       type: String,
@@ -26,14 +37,15 @@ const usuarioSchema = new mongoose.Schema(
       default: "cliente",
     },
 
-    // Empresa requerida solo para admin y colaborador
+    // Empresa requerida si es <> a superadmin
     empresa: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Empresa",
       required: function () {
-        return this.rol === "admin" || this.rol === "colaborador";
+        return this.rol !== "superadmin";
       },
     },
+
 
 
     // Sede requerida solo para admin y colaborador
